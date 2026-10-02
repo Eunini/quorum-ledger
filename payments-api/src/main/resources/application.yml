@@ -1,0 +1,13 @@
+quorum-ledger:
+  cluster:
+    - 127.0.0.1:7000
+    - 127.0.0.1:7001
+    - 127.0.0.1:7002
+  pool-size: 8
+  attempt-timeout: 1s
+  request-timeout: 10s
+
+spring:
+  mvc:
+    problemdetails:
+      enabled: true
