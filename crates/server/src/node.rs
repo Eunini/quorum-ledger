@@ -44,6 +44,9 @@ enum Input {
     ClientGone { conn: u64 },
 }
 
+/// Iterations slower than this are logged: they delay heartbeats.
+const SLOW_ITERATION: Duration = Duration::from_millis(200);
+
 fn now_ns() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -105,6 +108,7 @@ fn event_loop(
     let mut clients: HashMap<u64, Sender<Vec<u8>>> = HashMap::new();
     let mut client_route: HashMap<u128, u64> = HashMap::new();
     let mut next_tick = Instant::now() + cfg.tick;
+    let mut last_state = (replica.role(), replica.term(), replica.leader_id());
 
     let send_reply = |clients: &HashMap<u64, Sender<Vec<u8>>>, conn: u64, reply: Reply| {
         if let Some(tx) = clients.get(&conn) {
@@ -119,6 +123,7 @@ fn event_loop(
             Err(RecvTimeoutError::Timeout) => None,
             Err(RecvTimeoutError::Disconnected) => return,
         };
+        let iter_start = Instant::now();
         replica.set_clock(now_ns());
         let mut handled = 0;
         let mut input = first;
@@ -143,17 +148,49 @@ fn event_loop(
                 input = rx.try_recv().ok();
             }
         }
+        // At most one logical tick per loop iteration: if this process
+        // stalled (a large fsync, CPU starvation), its timers stall too
+        // instead of firing a burst of catch-up ticks that would make it
+        // start an election before it has even read the leader's messages.
         let now = Instant::now();
-        while now >= next_tick {
+        if now >= next_tick {
             replica.tick();
-            next_tick += cfg.tick;
+            next_tick = now + cfg.tick;
         }
+        let handled_at = Instant::now();
         replica.prepare();
         // Leader AppendEntries leave before the local fsync (they are not
         // held), so followers write in parallel with the leader.
         dispatch(replica, peers, &clients, &client_route);
+        let sync_start = Instant::now();
         replica.sync();
+        let sync_time = sync_start.elapsed();
         dispatch(replica, peers, &clients, &client_route);
+        let total = iter_start.elapsed();
+        if total > SLOW_ITERATION {
+            eprintln!(
+                "replica {}: slow loop iteration {:?} ({} inputs in {:?}, fsync {:?})",
+                cfg.id,
+                total,
+                handled,
+                handled_at - iter_start,
+                sync_time
+            );
+        }
+
+        let state = (replica.role(), replica.term(), replica.leader_id());
+        if state != last_state {
+            eprintln!(
+                "replica {}: {:?} in term {} (leader {:?}), log {} commit {}",
+                cfg.id,
+                state.0,
+                state.1,
+                state.2,
+                replica.last_index(),
+                replica.commit_index()
+            );
+            last_state = state;
+        }
     }
 }
 

@@ -104,7 +104,13 @@ fn bench_sm(args: &Args) {
                 index += 1;
                 ts += 1;
                 let transfers = (0..batch)
-                    .map(|j| random_transfer(&mut rng, u128::from(i) * 10_000 + j as u128 + 1, n_accounts))
+                    .map(|j| {
+                        random_transfer(
+                            &mut rng,
+                            u128::from(i) * 10_000 + j as u128 + 1,
+                            n_accounts,
+                        )
+                    })
                     .collect();
                 Entry {
                     term: 1,
@@ -129,7 +135,9 @@ fn bench_sm(args: &Args) {
         let elapsed = start.elapsed();
         lat.sort_unstable();
         let applied = entries.len() * batch;
-        sm.ledger.check_invariants().expect("ledger invariants after bench");
+        sm.ledger
+            .check_invariants()
+            .expect("ledger invariants after bench");
         println!(
             "bench=sm batch={batch} transfers={applied} seconds={:.3} transfers_per_sec={:.0} entry_p50_us={} entry_p99_us={}",
             elapsed.as_secs_f64(),
@@ -181,7 +189,9 @@ impl Drop for Servers {
             let _ = c.kill();
             let _ = c.wait();
         }
-        let _ = std::fs::remove_dir_all(&self.dir);
+        if std::env::var_os("KEEP_BENCH_DATA").is_none() {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
 }
 
@@ -198,7 +208,12 @@ fn server_binary() -> PathBuf {
 
 fn start_cluster(dir: &Path, n: usize) -> (Servers, Vec<SocketAddr>) {
     let addrs: Vec<SocketAddr> = (0..n)
-        .map(|_| TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap())
+        .map(|_| {
+            TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+        })
         .collect();
     let list: Vec<String> = addrs.iter().map(|a| a.to_string()).collect();
     std::fs::create_dir_all(dir).unwrap();
@@ -206,10 +221,20 @@ fn start_cluster(dir: &Path, n: usize) -> (Servers, Vec<SocketAddr>) {
     let children = (0..n)
         .map(|i| {
             Command::new(&bin)
-                .args(["--id", &i.to_string(), "--cluster", &list.join(","), "--data"])
+                .args([
+                    "--id",
+                    &i.to_string(),
+                    "--cluster",
+                    &list.join(","),
+                    "--data",
+                ])
                 .arg(dir)
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stderr(
+                    std::fs::File::create(dir.join(format!("replica-{i}.log")))
+                        .map(Stdio::from)
+                        .unwrap_or_else(|_| Stdio::null()),
+                )
                 .spawn()
                 .unwrap()
         })
@@ -237,7 +262,9 @@ fn bench_cluster(args: &Args) {
 
     let mut setup = Client::new(addrs.clone());
     for chunk in accounts(n_accounts).chunks(8190) {
-        let r = setup.create_accounts(chunk.to_vec()).expect("create accounts");
+        let r = setup
+            .create_accounts(chunk.to_vec())
+            .expect("create accounts");
         assert!(r.iter().all(|c| *c == ResultCode::Ok));
     }
 
@@ -263,7 +290,9 @@ fn bench_cluster(args: &Args) {
                         })
                         .collect();
                     let t = Instant::now();
-                    let results = client.create_transfers(batch_transfers).expect("request failed");
+                    let results = client
+                        .create_transfers(batch_transfers)
+                        .expect("request failed");
                     let d = t.elapsed();
                     if measuring.load(Ordering::Relaxed) {
                         lat.push(d);
@@ -292,7 +321,9 @@ fn bench_cluster(args: &Args) {
         failed += f;
     }
     lat.sort_unstable();
-    let check = setup.lookup_accounts((1..=n_accounts.min(8190)).map(u128::from).collect()).unwrap();
+    let check = setup
+        .lookup_accounts((1..=n_accounts.min(8190)).map(u128::from).collect())
+        .unwrap();
     std::hint::black_box(check);
     println!(
         "bench=cluster replicas={replicas} clients={clients} batch={batch} seconds={:.1} transfers={transfers} failed={failed} \

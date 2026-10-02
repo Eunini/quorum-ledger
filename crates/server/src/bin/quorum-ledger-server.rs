@@ -22,7 +22,14 @@ fn main() -> ExitCode {
     let mut data: Option<PathBuf> = None;
     let mut tick_ms = 10u64;
     let mut raft = Config {
-        max_entries_per_message: 16,
+        // Bounds an AppendEntries to ~4 x 8190 transfers (~3 MB).
+        max_entries_per_message: 4,
+        // With 10 ms ticks: heartbeat every 50 ms, election timeout 0.5-1 s.
+        // The event loop fsyncs inline, so on a shared VPS a few hundred ms
+        // of stall under load is normal and must not trigger elections.
+        heartbeat_ticks: 5,
+        election_timeout_min_ticks: 50,
+        election_timeout_max_ticks: 100,
         ..Config::default()
     };
     let mut args = std::env::args().skip(1);
