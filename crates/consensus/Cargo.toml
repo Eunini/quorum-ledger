@@ -1,0 +1,15 @@
+[package]
+name = "consensus"
+description = "Raft replication for the quorum-ledger state machine (sans-IO core, WAL storage)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ledger.workspace = true
+rustc-hash.workspace = true
+crc32fast.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
