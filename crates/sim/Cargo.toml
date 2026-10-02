@@ -1,0 +1,15 @@
+[package]
+name = "sim"
+description = "Deterministic simulation testing (VOPR-style) for quorum-ledger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ledger.workspace = true
+consensus.workspace = true
+
+[[bin]]
+name = "sim"
+path = "src/main.rs"

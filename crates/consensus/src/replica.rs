@@ -38,6 +38,9 @@ pub struct InjectedBugs {
     /// Follower sets commit index to `leader_commit` without bounding it by
     /// the last entry verified by the current AppendEntries.
     pub unbounded_follower_commit: bool,
+    /// Grant votes without the "candidate's log is at least as up-to-date"
+    /// check (Raft §5.4.1).
+    pub vote_ignores_log: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +51,9 @@ pub struct Config {
     pub heartbeat_ticks: u32,
     /// Maximum client requests packed into one log entry.
     pub max_requests_per_entry: usize,
+    /// Soft cap on events (accounts/transfers/ids) per log entry; an entry
+    /// always holds at least one request.
+    pub max_events_per_entry: usize,
     /// Maximum entries sent in one AppendEntries message.
     pub max_entries_per_message: usize,
     pub bugs: InjectedBugs,
@@ -61,6 +67,7 @@ impl Default for Config {
             election_timeout_max_ticks: 30,
             heartbeat_ticks: 3,
             max_requests_per_entry: 64,
+            max_events_per_entry: 8_190,
             max_entries_per_message: 64,
             bugs: InjectedBugs::default(),
         }
@@ -504,7 +511,8 @@ impl<S: Storage> Replica<S> {
     ) {
         let mut granted = false;
         if term == self.term && candidate == from {
-            let up_to_date = last_term > self.last_term()
+            let up_to_date = self.cfg.bugs.vote_ignores_log
+                || last_term > self.last_term()
                 || (last_term == self.last_term() && last_index >= self.last_index());
             let free = self.voted_for.is_none() || self.voted_for == Some(candidate);
             if up_to_date && free && self.role == Role::Follower {
@@ -666,6 +674,14 @@ impl<S: Storage> Replica<S> {
                 conflict_index
             };
             next = next.max(self.match_index[p] + 1).min(last + 1).max(1);
+            // Only probe again if this rejection taught us something new.
+            // Duplicated or stale rejections for a probe already in flight
+            // would otherwise each trigger another probe, and with network
+            // duplication that grows without bound (see docs/bugs-found.md).
+            // A lost probe is retransmitted by the heartbeat.
+            if self.probing[p] && self.next_index[p] == next {
+                return;
+            }
             self.next_index[p] = next;
             self.probing[p] = true;
             self.send_append(from);
@@ -801,8 +817,18 @@ impl<S: Storage> Replica<S> {
         let mut index = self.last_index();
         let mut ts = self.next_timestamp();
         while !self.pending.is_empty() {
-            let n = self.pending.len().min(self.cfg.max_requests_per_entry);
-            let batch: Vec<Request> = self.pending.drain(..n).collect();
+            let mut batch: Vec<Request> = Vec::new();
+            let mut events = 0usize;
+            while let Some(next) = self.pending.front() {
+                let e = next.operation.event_count();
+                let full = batch.len() >= self.cfg.max_requests_per_entry
+                    || (!batch.is_empty() && events + e > self.cfg.max_events_per_entry);
+                if full {
+                    break;
+                }
+                events += e;
+                batch.push(self.pending.pop_front().expect("front exists"));
+            }
             index += 1;
             entries.push(Entry {
                 term: self.term,
