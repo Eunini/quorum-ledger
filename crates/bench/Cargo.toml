@@ -1,0 +1,17 @@
+[package]
+name = "bench"
+description = "Throughput/latency benchmarks for quorum-ledger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ledger.workspace = true
+consensus.workspace = true
+server.workspace = true
+
+[[bin]]
+name = "bench"
+path = "src/main.rs"
