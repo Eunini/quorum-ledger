@@ -1,0 +1,15 @@
+[package]
+name = "server"
+description = "TCP server and Rust client for a quorum-ledger cluster"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ledger.workspace = true
+consensus.workspace = true
+
+[[bin]]
+name = "quorum-ledger-server"
+path = "src/bin/quorum-ledger-server.rs"
