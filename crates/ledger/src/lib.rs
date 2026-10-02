@@ -3,6 +3,7 @@
 
 pub mod codec;
 pub mod ledger;
+pub mod sharded;
 pub mod types;
 
 pub use ledger::{Ledger, PendingStatus};

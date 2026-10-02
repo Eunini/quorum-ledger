@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use rustc_hash::FxHashMap;
 
 use crate::codec::Fnv64;
+use crate::sharded::ShardedMap;
 use crate::types::{
     account_flags, transfer_flags, Account, NewAccount, NewTransfer, ResultCode, Transfer,
 };
@@ -42,11 +43,66 @@ struct PendingInfo {
     expires_at: u64,
 }
 
+/// Bits of `StoredTransfer::zero_fields`: which optional post/void fields the
+/// request left as zero (and were therefore inherited from the hold).
+mod zero {
+    pub const DEBIT: u8 = 1;
+    pub const CREDIT: u8 = 2;
+    pub const LEDGER: u8 = 4;
+    pub const CODE: u8 = 8;
+    pub const AMOUNT: u8 = 16;
+}
+
 #[derive(Debug, Clone)]
 struct StoredTransfer {
     transfer: Transfer,
-    /// The exact request as submitted, used for idempotency comparison.
-    request: NewTransfer,
+    /// Together with `transfer` this reconstructs the exact request, which
+    /// idempotency compares against, without storing a second copy of it.
+    zero_fields: u8,
+}
+
+impl StoredTransfer {
+    fn new(transfer: Transfer, request: &NewTransfer) -> Self {
+        let mut zero_fields = 0;
+        if request.debit_account_id == 0 {
+            zero_fields |= zero::DEBIT;
+        }
+        if request.credit_account_id == 0 {
+            zero_fields |= zero::CREDIT;
+        }
+        if request.ledger == 0 {
+            zero_fields |= zero::LEDGER;
+        }
+        if request.code == 0 {
+            zero_fields |= zero::CODE;
+        }
+        if request.amount == 0 {
+            zero_fields |= zero::AMOUNT;
+        }
+        let s = StoredTransfer {
+            transfer,
+            zero_fields,
+        };
+        debug_assert_eq!(s.request(), *request);
+        s
+    }
+
+    /// The request exactly as it was submitted.
+    fn request(&self) -> NewTransfer {
+        let t = &self.transfer;
+        let pick = |bit: u8, v: u128| if self.zero_fields & bit != 0 { 0 } else { v };
+        NewTransfer {
+            id: t.id,
+            debit_account_id: pick(zero::DEBIT, t.debit_account_id),
+            credit_account_id: pick(zero::CREDIT, t.credit_account_id),
+            amount: pick(zero::AMOUNT, t.amount),
+            pending_id: t.pending_id,
+            ledger: pick(zero::LEDGER, u128::from(t.ledger)) as u32,
+            code: pick(zero::CODE, u128::from(t.code)) as u16,
+            flags: t.flags,
+            timeout: t.timeout,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,9 +115,9 @@ enum Kind {
 
 #[derive(Debug, Clone, Default)]
 pub struct Ledger {
-    accounts: FxHashMap<u128, Account>,
-    transfers: FxHashMap<u128, StoredTransfer>,
-    pending: FxHashMap<u128, PendingInfo>,
+    accounts: ShardedMap<Account>,
+    transfers: ShardedMap<StoredTransfer>,
+    pending: ShardedMap<PendingInfo>,
     /// Pending transfers with a timeout, ordered by expiry time.
     expiry: BTreeSet<(u64, u128)>,
 }
@@ -169,7 +225,7 @@ impl Ledger {
         // same id with a different body is an error. Checked before any other
         // validation so a retry always gets a stable answer.
         if let Some(existing) = self.transfers.get(&t.id) {
-            return if existing.request == *t {
+            return if existing.request() == *t {
                 ResultCode::Exists
             } else {
                 ResultCode::ExistsWithDifferentFields
@@ -290,8 +346,8 @@ impl Ledger {
         }
         self.transfers.insert(
             t.id,
-            StoredTransfer {
-                transfer: Transfer {
+            StoredTransfer::new(
+                Transfer {
                     id: t.id,
                     debit_account_id: t.debit_account_id,
                     credit_account_id: t.credit_account_id,
@@ -303,8 +359,8 @@ impl Ledger {
                     timeout: t.timeout,
                     timestamp,
                 },
-                request: *t,
-            },
+                t,
+            ),
         );
         ResultCode::Ok
     }
@@ -399,8 +455,8 @@ impl Ledger {
         }
         self.transfers.insert(
             t.id,
-            StoredTransfer {
-                transfer: Transfer {
+            StoredTransfer::new(
+                Transfer {
                     id: t.id,
                     debit_account_id: p.debit_account_id,
                     credit_account_id: p.credit_account_id,
@@ -412,8 +468,8 @@ impl Ledger {
                     timeout: 0,
                     timestamp,
                 },
-                request: *t,
-            },
+                t,
+            ),
         );
         ResultCode::Ok
     }
@@ -585,7 +641,7 @@ impl Ledger {
         for t in transfers {
             buf.clear();
             t.transfer.encode(&mut buf);
-            t.request.encode(&mut buf);
+            t.request().encode(&mut buf);
             if let Some(p) = self.pending.get(&t.transfer.id) {
                 buf.push(p.status.as_u8());
                 buf.extend_from_slice(&p.expires_at.to_le_bytes());
