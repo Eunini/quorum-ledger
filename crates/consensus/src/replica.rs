@@ -109,6 +109,10 @@ pub struct Replica<S: Storage> {
     election_timeout: u32,
     heartbeat_elapsed: u32,
     votes: u64,
+    /// Leader: peers heard from (any AppendEntries response) in the current
+    /// check-quorum window.
+    quorum_active: u64,
+    quorum_check_elapsed: u32,
 
     // Leader state.
     next_index: Vec<u64>,
@@ -161,6 +165,8 @@ impl<S: Storage> Replica<S> {
             election_timeout: 0,
             heartbeat_elapsed: 0,
             votes: 0,
+            quorum_active: 0,
+            quorum_check_elapsed: 0,
             next_index: vec![1; n],
             match_index: vec![0; n],
             probing: vec![false; n],
@@ -356,6 +362,19 @@ impl<S: Storage> Replica<S> {
     pub fn tick(&mut self) {
         match self.role {
             Role::Leader => {
+                // Check quorum: a leader that has not heard from a majority
+                // within an election timeout steps down. This is what makes
+                // it safe for leaders to ignore disruptive vote requests.
+                self.quorum_check_elapsed += 1;
+                if self.quorum_check_elapsed >= self.cfg.election_timeout_min_ticks {
+                    self.quorum_check_elapsed = 0;
+                    let heard = (self.quorum_active | (1 << self.id)).count_ones() as usize;
+                    self.quorum_active = 0;
+                    if heard < self.majority() {
+                        self.become_follower(self.term, None);
+                        return;
+                    }
+                }
                 self.heartbeat_elapsed += 1;
                 if self.heartbeat_elapsed >= self.cfg.heartbeat_ticks {
                     self.heartbeat_elapsed = 0;
@@ -423,6 +442,8 @@ impl<S: Storage> Replica<S> {
         self.match_index.iter_mut().for_each(|m| *m = 0);
         self.probing.iter_mut().for_each(|p| *p = false);
         self.heartbeat_elapsed = 0;
+        self.quorum_active = 0;
+        self.quorum_check_elapsed = 0;
         self.pending.clear();
         self.inflight.clear();
         // A no-op from the new term lets the leader commit (and therefore
@@ -450,6 +471,15 @@ impl<S: Storage> Replica<S> {
     pub fn step(&mut self, from: u8, msg: Message) {
         if from >= self.cfg.replica_count || from == self.id {
             return;
+        }
+        if let Message::RequestVote { term, .. } = &msg {
+            if *term > self.term && self.believes_leader_alive() {
+                // Raft §6 "disruptive servers": while a live leader is known,
+                // ignore vote requests entirely (do not even adopt the higher
+                // term). A replica that merely stalled or was briefly cut off
+                // therefore cannot depose a healthy leader.
+                return;
+            }
         }
         if msg.term() > self.term {
             let leader = match &msg {
@@ -498,6 +528,17 @@ impl<S: Storage> Replica<S> {
                 conflict_index,
                 conflict_term,
             ),
+        }
+    }
+
+    fn believes_leader_alive(&self) -> bool {
+        match self.role {
+            Role::Leader => true,
+            Role::Follower => {
+                self.leader_id.is_some()
+                    && self.election_elapsed < self.cfg.election_timeout_min_ticks
+            }
+            Role::Candidate => false,
         }
     }
 
@@ -648,6 +689,7 @@ impl<S: Storage> Replica<S> {
         if self.role != Role::Leader || term != self.term {
             return;
         }
+        self.quorum_active |= 1 << from;
         let p = from as usize;
         let last = self.last_index();
         if success {

@@ -30,6 +30,10 @@ use ledger::codec::fnv64;
 use crate::disk::SimDevice;
 
 type SimReplica = Replica<Wal<SimDevice>>;
+/// (client id, request number)
+type RequestKey = (u128, u64);
+/// (log index, slot within the entry's batch)
+type LogPos = (u64, usize);
 
 pub struct Checker {
     committed: Vec<Entry>,
@@ -138,7 +142,9 @@ impl Checker {
 
     /// Records when a request was first sent (for the real-time order check).
     pub fn on_first_send(&mut self, req: &Request, now: u64) {
-        self.sent_at.entry((req.client_id, req.request_number)).or_insert(now);
+        self.sent_at
+            .entry((req.client_id, req.request_number))
+            .or_insert(now);
     }
 
     pub fn on_ack(&mut self, req: &Request, reply: &Reply, now: u64) -> Result<(), String> {
@@ -159,16 +165,19 @@ impl Checker {
     /// before request B was first sent, A must precede B in the log. (Every
     /// operation, including lookups, goes through the log, so log order is
     /// the linearization order.)
-    fn check_real_time_order(&self, position: &BTreeMap<(u128, u64), (u64, usize)>) -> Result<(), String> {
+    fn check_real_time_order(
+        &self,
+        position: &BTreeMap<(u128, u64), (u64, usize)>,
+    ) -> Result<(), String> {
         // Acknowledged requests sorted by ack time, with a running maximum of
         // their log positions.
-        let mut acked: Vec<(u64, (u64, usize), (u128, u64))> = self
+        let mut acked: Vec<(u64, LogPos, RequestKey)> = self
             .acked_at
             .iter()
             .filter_map(|(k, t)| position.get(k).map(|p| (*t, *p, *k)))
             .collect();
         acked.sort();
-        let mut prefix_max: Vec<((u64, usize), (u128, u64))> = Vec::with_capacity(acked.len());
+        let mut prefix_max: Vec<(LogPos, RequestKey)> = Vec::with_capacity(acked.len());
         for (_, pos, key) in &acked {
             let best = match prefix_max.last() {
                 Some((p, k)) if *p > *pos => (*p, *k),
@@ -177,7 +186,9 @@ impl Checker {
             prefix_max.push(best);
         }
         for (key, pos) in position {
-            let Some(sent) = self.sent_at.get(key) else { continue };
+            let Some(sent) = self.sent_at.get(key) else {
+                continue;
+            };
             // Requests acknowledged strictly before `key` was first sent.
             let n = acked.partition_point(|(t, _, _)| t < sent);
             if n == 0 {
