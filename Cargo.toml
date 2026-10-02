@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ledger",
+    "crates/consensus",
+    "crates/sim",
+    "crates/server",
+    "crates/bench",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.82"
+authors = ["Inioluwa Atanda"]
+
+[workspace.dependencies]
+ledger = { path = "crates/ledger" }
+consensus = { path = "crates/consensus" }
+server = { path = "crates/server" }
+rustc-hash = "2"
+crc32fast = "1"
+proptest = "1"
+
+[profile.release]
+debug = "line-tables-only"
+# Keep unwinding so the VOPR runner can catch a panicking seed and report it.
+panic = "unwind"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test]
+opt-level = 1

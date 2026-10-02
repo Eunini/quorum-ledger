@@ -1,0 +1,13 @@
+[package]
+name = "ledger"
+description = "Deterministic double-entry ledger state machine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustc-hash.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

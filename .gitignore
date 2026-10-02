@@ -1,0 +1,13 @@
+/target/
+**/target/
+*.wal
+/data/
+/.bench/
+/.pgdata/
+*.log
+.idea/
+.vscode/
+*.iml
+.DS_Store
+/java-client/target/
+/payments-api/target/
