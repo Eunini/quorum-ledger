@@ -17,7 +17,7 @@ install('''location = /fintech { return 308 /fintech/; }
 location ^~ /fintech/ {
  limit_req zone=fintech_demo burst=30 nodelay;
  limit_req_status 429;
- client_max_body_size 1k;
+ client_max_body_size 256k;
  proxy_pass http://127.0.0.1:28190;
  proxy_http_version 1.1;
  proxy_set_header Host $host;
@@ -35,4 +35,4 @@ except subprocess.CalledProcessError:
  subprocess.run(['sudo','cp','-p','/etc/fintech-demo/realalma-leads.before-fintech.conf',str(config)],check=True)
  raise
 subprocess.run(['sudo','systemctl','reload','nginx'],check=True)
-print('HTTPS demo routes installed; existing application routes preserved.')
+print('HTTPS application routes installed; existing application routes preserved.')

@@ -1,9 +1,2 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Quorum Ledger · Live Demo</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
-<body><nav><strong>Eunini / Fintech Systems</strong><a href="../">All demos</a><a href="https://github.com/Eunini/quorum-ledger" target="_blank" rel="noopener">Source code</a></nav>
-<main><header><div><div class="label">Java + Rust / Live sandbox</div><h1>Quorum Ledger</h1><p>Run a transfer through three replicated nodes. Watch retries, holds, partial captures, and overdraft checks.</p><div id="status" class="status" role="status">Checking services…</div></div><div class="controls"><button id="run">Run ledger scenario</button></div></header>
-<div id="error" class="error hidden" role="alert"></div>
-<div class="metrics"><div><small>Available balance</small><strong id="available">—</strong></div><div><small>Merchant received</small><strong id="received">—</strong></div><div><small>Replicas online</small><strong id="replicas">—</strong></div></div>
-<div class="layout"><section><h2>Transaction checks</h2><div id="steps"><p>Loading the latest verified run…</p></div></section><section><h2>Account balances</h2><div class="scroll"><table><thead id="head"></thead><tbody id="rows"></tbody></table></div><p class="note">Amounts are USD. A partial capture releases the unused reservation.</p><p class="note" id="timestamp"></p></section></div>
-<details><summary>Inspect the live response</summary><pre id="raw">No response yet.</pre></details>
-<footer>Synthetic data only. A three-node cluster commits every operation. Demo runs are limited to keep the services available.</footer></main></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quorum Ledger</title><link rel="stylesheet" href="shared.css"><script type="module" src="app.js"></script></head><body><main class="loading" role="status">Loading workspace…</main></body></html>

@@ -1,63 +1,66 @@
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
-import { mkdir, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-const base=process.env.DEMO_URL || 'https://leads.realalma.com/fintech/', out=new URL('./evidence',import.meta.url).pathname;
-await mkdir(out,{recursive:true});
+import { mkdir, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+const BASE=process.env.FINTECH_PUBLIC_URL||'https://leads.realalma.com/fintech/';
+const projects=['quorum-ledger','cross-border-clearing','mule-ring-detector','card-auth-switch'];
+const directory=new URL('./evidence/',import.meta.url);await mkdir(directory,{recursive:true});
 const browser=await chromium.launch({headless:true});
-const result=[];
-try {
-  const context=await browser.newContext({viewport:{width:1440,height:1000},recordVideo:{dir:out}});
-  for(const project of ['quorum-ledger','cross-border-clearing','mule-ring-detector','card-auth-switch']) {
-    const page=await context.newPage(), errors=[], failures=[];
-    page.on('pageerror',e=>errors.push(e.message));page.on('requestfailed',r=>failures.push(r.url()));
-    await page.goto(base+project+'/',{waitUntil:'networkidle'});
-    if(project==='quorum-ledger') {
-      await page.waitForSelector('#replicas:has-text("3 / 3")');
-      await page.click('#run');await page.waitForSelector('#run:has-text("Run ledger scenario"):not([disabled])');
-      assert.equal(await page.locator('#error').isVisible(),false);
-      assert.equal(await page.locator('#available').textContent(),'$950.00');
-    } else if(project==='card-auth-switch') {
-      await page.waitForSelector('#status:has-text("Live")');
-      // Public fixed scenarios exercise the real TCP/HSM/issuer path.
-      for(const [scenario,code] of [['approve','00'],['wrong-pin','55'],['tampered','82'],['insufficient','51']]) {
-        await page.waitForTimeout(10500);
-        await page.selectOption('#scenario',scenario);await page.click('#run');
-        await page.waitForSelector('#run:has-text("Send authorization"):not([disabled])',{timeout:25000});
-        assert.equal(await page.locator('#error').isVisible(),false,await page.locator('#error').textContent());
-        assert.ok((await page.locator('#response').textContent()).startsWith(code));
-        assert.equal(await page.locator('#balanced').textContent(),'Yes');
-      }
-    } else if(project==='cross-border-clearing') {
-      await page.waitForSelector('#tiles .value');
-      assert.ok(Number((await page.locator('#tiles .value').first().textContent()).replaceAll(',',''))>=2000);
-      await page.click('summary');assert.ok(await page.locator('#cycleTable tr').count()>1);
-    } else {
-      await page.waitForSelector('#case-rows tr[data-id]');
-      assert.ok((await page.locator('#session-user').textContent()).includes('Read only'));
-      assert.equal(await page.locator('#login-form').isVisible(),false);
-      await page.locator('#case-rows tr[data-id]').first().click();
-      await page.waitForSelector('[data-f="reference"]');await page.waitForSelector('[data-slot="graph"] canvas');
-      assert.equal(await page.locator('.actions').count(),0);assert.equal(await page.locator('.downloads').count(),0);
-      await page.click('#next');await page.click('#prev');
-      const authHeaders=await page.evaluate(async()=>{const r=await fetch('api/me');return r.status});assert.equal(authHeaders,200);
-    }
-    await page.screenshot({path:out+'/'+project+'-desktop.png',fullPage:true});
-    await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);
-    await page.screenshot({path:out+'/'+project+'-mobile.png',fullPage:true});
-    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);
-    result.push({project,url:base+project+'/',errors,failures,mobileOverflow:overflow});
-    assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);assert.equal(overflow,false,project+' mobile overflow');
-    await page.close();console.log(project+' browser checks passed');
-  }
-  await context.close();
-  for(const [route,method,expected] of [
-    ['mule-ring-detector/api/cases/1/assign','POST',405],
-    ['mule-ring-detector/api/alerts','POST',405],
-    ['cross-border-clearing/api/admin/cycles/close','POST',405],
-    ['card-auth-switch/internal/v1/cards/snapshot','GET',404],
-    ['quorum-ledger/accounts','POST',405],
-    ['mule-ring-detector/api/cases?size=1000','GET',400]]) {
-    const r=await fetch(base+route,{method});assert.equal(r.status,expected,route);
-  }
-  await writeFile(out+'/verification.json',JSON.stringify({verifiedAt:new Date().toISOString(),result,protectedRoutes:'passed'},null,2));
-} finally { await browser.close(); }
+const context=await browser.newContext({viewport:{width:1440,height:1000},recordVideo:{dir:new URL('./evidence/videos/',import.meta.url).pathname}});
+const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+const checks=[];let csrf;
+async function api(project,route,body,{key=randomUUID(),status=200,raw=false,token=csrf,client=context}={}){
+ await new Promise(r=>setTimeout(r,200));const url=BASE+(project?project+'/api/':'')+route;
+ const r=body===undefined?await client.request.get(url,{headers:token?{'X-CSRF-Token':token}:{}}):await client.request.post(url,{data:body,headers:{'X-CSRF-Token':token||'','Idempotency-Key':key}});
+ const type=r.headers()['content-type']||'';const result=raw?await r.body():type.includes('json')?await r.json():await r.text();
+ assert.equal(r.status(),status,`${project||'account'}/${route}: ${result?.error||'unexpected HTTP status'}`);return result;
+}
+async function profile(client=context){const p=await api(null,'session',undefined,{client});if(client===context)csrf=p.csrf;return p;}
+async function open(project,tab='overview'){await page.waitForTimeout(800);await page.goto(BASE+project+'/?verification='+Date.now()+'#'+tab);await page.locator('.sidebar').waitFor();await page.locator('.content .page-head').waitFor();await page.waitForTimeout(150);}
+async function dialogSubmit(label){await page.locator('dialog').getByRole('button',{name:label,exact:true}).click();await page.locator('dialog').waitFor({state:'hidden',timeout:30000});}
+async function shot(project,label='overview'){await page.screenshot({path:new URL(`${project}-${label}.png`,directory).pathname,fullPage:true});}
+function pass(description){checks.push(description);console.log('PASS '+description);}
+try{
+ for(const project of projects)await api(project,'state',undefined,{status:401});pass('All four application data APIs require a session');
+ await page.goto(BASE+'quorum-ledger/');await page.getByRole('button',{name:'Open a workspace',exact:true}).click();await page.locator('.sidebar').waitFor();await page.locator('.page-head').waitFor();await profile();
+ // Account creation and funding through the actual browser forms.
+ for(const name of ['Operating account','Settlement account']){await page.getByRole('button',{name:'Create account',exact:true}).click();await page.locator('dialog input[name="name"]').fill(name);await dialogSubmit('Create account');}
+ await page.getByRole('button',{name:'Accounts',exact:false}).first().click();await page.getByRole('row').filter({hasText:'Operating account'}).getByRole('button',{name:'Open',exact:true}).click();await page.locator('dialog').getByRole('button',{name:'Add funds',exact:true}).click();await page.locator('dialog input[name="amount"]').fill('1000.00');await page.locator('dialog input[name="reference"]').fill('Opening allocation');await dialogSubmit('Add funds');
+ const ledger='quorum-ledger';let state=await api(ledger,'state');const a=state.accounts.find(a=>a.name==='Operating account'),b=state.accounts.find(a=>a.name==='Settlement account');assert.equal(a.available,100000);
+ await page.getByRole('button',{name:'Transfers',exact:false}).first().click();await page.getByRole('button',{name:'New transfer',exact:true}).click();await page.locator('dialog select[name="from"]').selectOption(a.id);await page.locator('dialog select[name="to"]').selectOption(b.id);await page.locator('dialog input[name="amount"]').fill('125.25');await page.locator('dialog input[name="memo"]').fill('Quarterly allocation');await dialogSubmit('Post transfer');
+ const key=randomUUID();const transfer=await api(ledger,'transfers',{from:a.id,to:b.id,amount:'10.00',memo:'Retry check'},{key});assert.deepEqual(await api(ledger,'transfers',{from:a.id,to:b.id,amount:'10.00',memo:'Retry check'},{key}),transfer);await api(ledger,'transfers',{from:a.id,to:b.id,amount:'11.00',memo:'Retry check'},{key,status:409});
+ const hold=await api(ledger,'holds',{from:a.id,to:b.id,amount:'200.00',timeoutSeconds:3600,memo:'Vendor purchase'});state=await api(ledger,'state');assert.equal(state.accounts.find(x=>x.id===a.id).debitsPending,20000);await api(ledger,`holds/${hold.id}/capture`,{amount:'150.00'});
+ const release=await api(ledger,'holds',{from:a.id,to:b.id,amount:'20.00',timeoutSeconds:3600});await api(ledger,`holds/${release.id}/void`,{});
+ await api(ledger,'transfers',{from:a.id,to:b.id,amount:'9999.00'},{status:422});await api(ledger,'accounts',{name:'Forbidden',currency:'USD'},{status:403,token:'invalid'});
+ state=await api(ledger,'state');assert.equal(state.accounts.find(x=>x.id===a.id).available,71475);assert.equal(state.accounts.find(x=>x.id===b.id).available,28525);assert.equal(state.accounts.find(x=>x.id===a.id).debitsPending,0);
+ await open(ledger);await shot(ledger);await open(ledger,'holds');await shot(ledger,'holds');pass('Ledger accounts, funding, transfer, idempotent retry, partial capture, release, overdraft rejection, and CSRF enforcement');
+ // Upgrade the guest identity and prove saved data survives sign-out and sign-in.
+ const account={name:'Portfolio operator',email:randomUUID()+'@example.com',password:randomUUID()};await api(null,'register',account,{status:201});await profile();const owner=await profile();await api(null,'signout',{});await api(null,'signin',{email:account.email,password:account.password});await profile();assert.equal((await api(ledger,'state')).accounts.length,2);pass('Account registration, password sign-in, and persistence of an upgraded guest workspace');
+ const foreign=await browser.newContext();await api(null,'guest',{}, {client:foreign,status:201});const fp=await profile(foreign);assert.equal((await api(ledger,'state',undefined,{client:foreign,token:fp.csrf})).accounts.length,0);await api(ledger,`accounts/${a.id}/fund`,{amount:'1.00'},{client:foreign,token:fp.csrf,status:404});const fc=await api(ledger,'accounts',{name:'Separate account',currency:'USD'},{client:foreign,token:fp.csrf,key});assert.notEqual(fc.id,a.id);pass('Independent workspaces cannot read or modify another workspace’s accounts');
+ const clearing='cross-border-clearing';await open(clearing);await page.getByRole('button',{name:'New payment',exact:true}).click();await page.locator('dialog input[name="sender"]').fill('Bluebird Trading');await page.locator('dialog input[name="beneficiary"]').fill('Harbor Supply');await page.locator('dialog input[name="amount"]').fill('1800.00');await page.locator('dialog input[name="reference"]').fill('INVOICE-'+randomUUID().slice(0,8));await page.locator('dialog').getByRole('button',{name:'Submit payment',exact:true}).click();await page.locator('dialog h2').filter({hasText:'Payment '}).waitFor({timeout:30000});await page.locator('dialog .close').click();
+ const q=await api(clearing,'quotes',{sourceCurrency:'USD',targetCurrency:'GBP',amount:'1000.00'});assert.equal(q.source.currency,'USD');assert.equal(q.target.currency,'GBP');assert.ok(Number(q.target.amount)>0);
+ let clearingState=await api(clearing,'state');const payment=clearingState.payments[0];assert.ok(payment.id);const instruction=await api(clearing,`payments/${payment.id}/message`,undefined,{raw:true});assert.ok(instruction.toString().includes('pacs.008'));await api(clearing,`payments/${payment.id}/message`,undefined,{client:foreign,token:fp.csrf,status:404});
+ const cycle=await api(clearing,'cycles/close',{});const positions=await api(clearing,`cycles/${cycle.id}/positions`),transfers=await api(clearing,`cycles/${cycle.id}/transfers`);assert.ok(Array.isArray(positions)&&Array.isArray(transfers));const statement=await api(clearing,`cycles/${cycle.id}/statements/XB01USNY`,undefined,{raw:true});assert.ok(statement.toString().includes('camt.053'));await api(clearing,'liquidity/run',{});await open(clearing);await shot(clearing);await open(clearing,'payments');await shot(clearing,'payments');await open(clearing,'fx');await page.locator('input[name="amount"]').fill('1000.00');await page.getByRole('button',{name:'Get quote',exact:true}).click();await page.getByText('Recipient receives',{exact:true}).waitFor();await shot(clearing,'fx');pass('Cross-border payment submission, private instruction book, FX quote, cycle close, net positions, settlement plan, liquidity run, and camt.053 statement');
+ const mule='mule-ring-detector';await open(mule);await page.getByRole('button',{name:'Import sample evidence',exact:true}).click();await dialogSubmit('Import evidence');let cases=(await api(mule,'state')).cases;assert.ok(cases.length>0);const target=cases.find(c=>c.status==='OPEN');assert.ok(target);await open(mule,'case-'+target.id);await page.getByRole('button',{name:'Assign to me',exact:true}).click();await page.waitForTimeout(300);
+ await page.locator('textarea[name="text"]').fill('Review counterparty links and transaction timing.');await page.getByRole('button',{name:'Add note',exact:true}).click();await page.waitForTimeout(300);
+ await page.getByRole('button',{name:'Start investigation',exact:true}).click();await page.locator('dialog input[name="comment"]').fill('Evidence supports investigation.');await dialogSubmit('Start investigation');await page.getByRole('button',{name:'Escalate',exact:true}).click();await page.locator('dialog input[name="comment"]').fill('Escalated for independent review.');await dialogSubmit('Escalate case');
+ const xml=await api(mule,`cases/${target.id}/str.xml`,undefined,{raw:true}),pdf=await api(mule,`cases/${target.id}/summary.pdf`,undefined,{raw:true}),html=await api(mule,`cases/${target.id}/summary.html`,undefined,{raw:true});assert.ok(xml.toString().includes('<?xml'));assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.ok(html.toString().includes('<html'));
+ await page.getByRole('button',{name:'Request filing review',exact:true}).click();await page.locator('dialog input[name="comment"]').fill('Please independently review the STR.');await dialogSubmit('Request filing review');await api(mule,`cases/${target.id}/filing-approval`,{comment:'Self approval'},{status:403});await page.locator('.graph canvas').first().waitFor({timeout:15000});await page.waitForTimeout(500);await shot(mule,'investigation');
+ const reviewer=await browser.newContext();await api(null,'register',{name:'Independent supervisor',email:randomUUID()+'@example.com',password:randomUUID()},{client:reviewer,status:201});let reviewerProfile=await profile(reviewer);const invite=await api(null,'invite',{role:'SUPERVISOR'},{status:201});await api(null,'join',{code:invite.code},{client:reviewer,token:reviewerProfile.csrf});reviewerProfile=await profile(reviewer);await api(mule,`cases/${target.id}/filing-approval`,{comment:'Independent evidence review complete.'},{client:reviewer,token:reviewerProfile.csrf});assert.equal((await api(mule,`cases/${target.id}`)).disposition,'STR_FILED');await api(mule,`cases/${target.id}`,undefined,{client:foreign,token:fp.csrf,status:404});
+ await open(mule,'monitoring');await page.locator('input[name="fromAccount"]').fill('ACCT-1001');await page.locator('input[name="toAccount"]').fill('ACCT-1002');await page.locator('input[name="amount"]').fill('750.00');await page.getByRole('button',{name:'Score transaction',exact:true}).click();await page.getByRole('heading',{name:'Scoring result'}).waitFor();assert.equal((await api(mule,'state')).scores.length,1);await shot(mule,'monitoring');await open(mule);await shot(mule);pass('Case import, signed assignment, notes, investigation, escalation, real evidence graph, XML/HTML/PDF reports, independent supervisor approval, model scoring, and private case ownership');
+ const card='card-auth-switch';await open(card);await page.getByRole('button',{name:'Issue card',exact:true}).click();await page.locator('dialog input[name="name"]').fill('Portfolio corporate card');await dialogSubmit('Issue card');let cardState=await api(card,'state');const c=cardState.cards[0];assert.equal(c.account.availableMinor,100000);assert.equal(c.last4.length,4);assert.ok(!JSON.stringify(cardState).includes('"pan"'));
+ await page.getByRole('button',{name:'New authorization',exact:true}).click();await page.locator('dialog input[name="amount"]').fill('42.50');await page.locator('dialog input[name="merchant"]').fill('Bluebird Market');await page.locator('dialog').getByRole('button',{name:'Send authorization',exact:true}).click();await page.locator('dialog h2').filter({hasText:/^Authorization /}).waitFor({timeout:30000});cardState=await api(card,'state');const auth=cardState.transactions[0];assert.equal(auth.status,'AUTHORIZED');assert.equal(auth.arpcVerified,true);assert.equal(cardState.cards[0].account.heldMinor,4250);await page.locator('dialog').getByRole('button',{name:'Reverse authorization',exact:true}).click();await page.locator('dialog').waitFor({state:'hidden'});assert.equal((await api(card,'state')).cards[0].account.heldMinor,0);
+ const approved=await api(card,`cards/${c.id}/authorize`,{amount:'80.00',merchant:'Harbor Services',mode:'chip-pin',verification:'valid'});assert.equal(approved.status,'AUTHORIZED');const settled=await api(card,`authorizations/${approved.id}/settle`,{});assert.equal(settled.status,'SETTLED');assert.equal((await api(card,'state')).cards[0].account.ledgerBalanceMinor,92000);
+ const denied=await api(card,`cards/${c.id}/authorize`,{amount:'1.00',merchant:'PIN verification',mode:'chip-pin',verification:'wrong-pin'});assert.equal(denied.responseCode,'55');
+ const dispute=await api(card,'disputes',{authorizationId:approved.id,reasonCode:'13.1',amount:'80.00',note:'Services not received.'});await api(card,`disputes/${dispute.id}/evidence`,{type:'CARDHOLDER_LETTER',description:'Cardholder confirms non-receipt.'});await api(card,`disputes/${dispute.id}/chargeback`,{});await api(card,`disputes/${dispute.id}/network-settlement`,{});await api(card,`disputes/${dispute.id}/representment`,{reason:'Merchant submitted delivery evidence.'});await api(card,`disputes/${dispute.id}/resolve`,{action:'ESCALATE',note:'Delivery evidence requires arbitration.'});await api(card,`disputes/${dispute.id}/resolve`,{action:'PREARB_WON',note:'Evidence reviewed and cardholder claim upheld.'});
+ await api(card,`cards/${c.id}/deposit`,{amount:'100.00'});await api(card,`cards/${c.id}/status`,{status:'BLOCKED',reason:'Temporary lock'});await api(card,`cards/${c.id}/status`,{status:'ACTIVE',reason:'Lock removed'});await api(card,`cards/${c.id}/deposit`,{amount:'1.00'},{client:foreign,token:fp.csrf,status:404});cardState=await api(card,'state');assert.equal(cardState.ledger.balanced,true);assert.equal(cardState.ledger.balancesMatch,true);await open(card);await shot(card);await open(card,'authorizations');await shot(card,'authorizations');await open(card,'cards');await page.getByRole('button',{name:'Manage',exact:true}).first().click();await page.getByRole('heading',{name:'Account holds'}).waitFor();await shot(card,'card-detail');await page.locator('dialog .close').click();await open(card,'disputes');await page.getByRole('button',{name:'Work case',exact:true}).first().click();await shot(card,'dispute');await page.locator('dialog .close').click();pass('Card issuance, masking, EMV/ARPC authorization, durable holds, reversal, presentment settlement, PIN decline, evidence, chargeback, dispute resolution, deposits, card lock, and balanced ledger');
+ for(const project of projects){await open(project);await page.setViewportSize({width:390,height:844});await page.waitForTimeout(100);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),project+' mobile overflow');await shot(project,'mobile');await page.setViewportSize({width:1440,height:1000});await page.reload();await page.locator('.sidebar').waitFor();await page.locator('.page-head').waitFor();assert.equal(await page.getByText(/\bdemo\b/i).count(),0);}
+ assert.deepEqual(errors,[]);pass('All four apps persist across reload, support mobile, contain no demo labels, and have no browser exceptions');
+ if(process.env.FINTECH_TEST_RESTART==='1'){
+  const summaries=async()=>Promise.all(projects.map(async project=>{const s=await api(project,'state');return {project,accounts:s.accounts?.map(a=>[a.id,a.available,a.debitsPending]),payments:s.payments?.map(p=>p.id),cases:s.cases?.map(c=>[c.id,c.status,c.disposition]),cards:s.cards?.map(c=>[c.id,c.account.ledgerBalanceMinor,c.account.heldMinor]),transactions:s.transactions?.map(t=>[t.id,t.status])};}));
+  const before=await summaries();await promisify(execFile)('sudo',['systemctl','restart','fintech-demo-web.service']);await page.waitForTimeout(1200);assert.deepEqual(await summaries(),before);assert.equal((await profile()).id,owner.id);pass('Sessions, private records, financial balances, and case decisions survive an application service restart');
+ }
+ await foreign.close();await reviewer.close();await context.close();await browser.close();await writeFile(new URL('verification.json',import.meta.url),JSON.stringify({verifiedAt:new Date().toISOString(),base:BASE,checks,passed:true},null,2)+'\n');
+}catch(e){await page.screenshot({path:new URL('failure.png',directory).pathname,fullPage:true}).catch(()=>{});await browser.close();throw e;}

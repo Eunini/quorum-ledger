@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the isolated, loopback-only demo services. Secrets stay outside Git."""
+"""Install the isolated, loopback-only application services. Secrets stay outside Git."""
 from pathlib import Path
 import subprocess, tempfile, os, secrets, shutil, hashlib
 ROOT=Path(__file__).resolve().parents[3]
@@ -26,6 +26,10 @@ else:
          'MRD_SUPERVISOR1_PASSWORD':secrets.token_urlsafe(32),'MRD_ENGINE_PASSWORD':secrets.token_urlsafe(32)}
     env['MRD_PUSH_PASSWORD']=env['MRD_ENGINE_PASSWORD']
     install('\n'.join(f'{k}="{v}"' for k,v in env.items())+'\n',env_path,'600')
+# Upgrade existing installations without disclosing or replacing their credentials.
+env_text=subprocess.check_output(['sudo','cat',str(env_path)],text=True)
+if 'MRD_GATEWAY_SECRET=' not in env_text:
+    install(env_text+'MRD_GATEWAY_SECRET="'+secrets.token_urlsafe(48)+'"\n',env_path,'600')
 if not (STATE/'pg/PG_VERSION').exists():
     run(['/usr/lib/postgresql/14/bin/initdb','-D',str(STATE/'pg'),'--auth-local=peer','--auth-host=scram-sha-256'],stdout=subprocess.DEVNULL)
     with (STATE/'pg/postgresql.conf').open('a') as f:
@@ -39,7 +43,7 @@ def release_jar(source):
 
 def unit(name,command,cwd=ROOT,extra='',after='fintech-demo-postgres.service'):
     text=f'''[Unit]
-Description=Fintech portfolio demo: {name}
+Description=Fintech portfolio application: {name}
 After=network.target {after}
 [Service]
 Type=simple
@@ -99,4 +103,4 @@ run(['sudo','systemctl','enable','--now','fintech-demo-feed.timer'])
 services=[f'fintech-demo-{n}.service'  for n in ['ledger-0','ledger-1','ledger-2','payments','netting','clearing','cases','detector','hsm','issuer','switch','web']]
 run(['sudo','systemctl','enable','--now',*services])
 if changed_units: run(['sudo','systemctl','restart',*changed_units])
-print('Installed and started 13 persistent demo services; credentials kept outside the project.')
+print('Installed and started 13 persistent application services; credentials kept outside the project.')

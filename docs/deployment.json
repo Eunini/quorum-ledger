@@ -2,5 +2,7 @@
   "publicUrl": "https://leads.realalma.com/fintech/quorum-ledger/",
   "verification": "docs/public-deployment-verification.json",
   "gatewaySource": "https://github.com/Eunini/quorum-ledger/tree/main/ops/portfolio-demo",
-  "data": "synthetic"
+  "data": "synthetic",
+  "applicationFeatures": "Create accounts in USD, EUR, or GBP; fund them; post transfers; reserve, partially capture, or release holds; inspect balances; and export transactions.",
+  "authentication": "Persistent accounts, secure session cookies, private workspaces, CSRF protection, and team roles"
 }

@@ -1,1 +1,15 @@
-{"name":"fintech-portfolio-demos","private":true,"type":"module","scripts":{"test:public":"node test-public.mjs"},"devDependencies":{"playwright":"1.62.1"}}
+{
+  "name": "fintech-portfolio-applications",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:public": "node test-public.mjs",
+    "test": "node --test test-store.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

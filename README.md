@@ -1,14 +1,26 @@
 # quorum-ledger
 
-**[Open the live demo](https://leads.realalma.com/fintech/quorum-ledger/)** · Transfer, retry, hold, and capture against the live three-node cluster. All data is synthetic.
+**[Open the application](https://leads.realalma.com/fintech/quorum-ledger/)** · Create accounts in USD, EUR, or GBP; fund them; post transfers; reserve, partially capture, or release holds; inspect balances; and export transactions.
 
 A replicated double-entry ledger in Rust, tested with deterministic simulation,
 with a Java client and a Spring Boot payments API on top.
 
-> **Personal portfolio project.** It is not used in production, has no users,
+> **Personal portfolio project.** It is not used by a production financial institution
 > and is missing things a production ledger needs (see
 > [Limitations](#limitations)). Every number below was measured on the machine
 > described, with the commands given.
+
+## Use the application
+
+Create an account, sign in, or open a private workspace and save your account later. One account works across all four applications. Workspaces have persistent records, searchable tables, activity logs, and team invitations. Your saved data is retained when you reload or sign in from another device.
+
+The browser operates the Spring Boot payments API and live three-node Rust ledger cluster. Funding and ledger balances persist across browser and service restarts.
+
+All funds, cards, institutions, and sample transactions are synthetic. The applications do not connect to real banking or card networks.
+
+[Application workflows and hosting details](docs/application.md)
+
+![Application workspace](docs/application.png)
 
 What is in the box:
 

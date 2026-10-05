@@ -48,3 +48,19 @@ jobs:
         run: cargo build --release -p server
       - name: Maven verify (unit tests + 3-node cluster integration test)
         run: ./mvnw -B verify
+
+  applications:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Workspace permissions, sessions, and operation idempotency
+        run: node --test ops/portfolio-demo/test-store.mjs
+      - name: Application syntax
+        run: |
+          node --check ops/portfolio-demo/server.mjs
+          node --check ops/portfolio-demo/applications.mjs
+          node --check web/shared.js
+          node --check web/app.js

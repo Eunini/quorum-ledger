@@ -1,34 +1,16 @@
 {
-  "verifiedAt": "2026-10-05T13:22:02.151Z",
-  "result": [
-    {
-      "project": "quorum-ledger",
-      "url": "https://leads.realalma.com/fintech/quorum-ledger/",
-      "errors": [],
-      "failures": [],
-      "mobileOverflow": false
-    },
-    {
-      "project": "cross-border-clearing",
-      "url": "https://leads.realalma.com/fintech/cross-border-clearing/",
-      "errors": [],
-      "failures": [],
-      "mobileOverflow": false
-    },
-    {
-      "project": "mule-ring-detector",
-      "url": "https://leads.realalma.com/fintech/mule-ring-detector/",
-      "errors": [],
-      "failures": [],
-      "mobileOverflow": false
-    },
-    {
-      "project": "card-auth-switch",
-      "url": "https://leads.realalma.com/fintech/card-auth-switch/",
-      "errors": [],
-      "failures": [],
-      "mobileOverflow": false
-    }
+  "verifiedAt": "2026-10-05T14:29:13.158Z",
+  "base": "https://leads.realalma.com/fintech/",
+  "checks": [
+    "All four application data APIs require a session",
+    "Ledger accounts, funding, transfer, idempotent retry, partial capture, release, overdraft rejection, and CSRF enforcement",
+    "Account registration, password sign-in, and persistence of an upgraded guest workspace",
+    "Independent workspaces cannot read or modify another workspace’s accounts",
+    "Cross-border payment submission, private instruction book, FX quote, cycle close, net positions, settlement plan, liquidity run, and camt.053 statement",
+    "Case import, signed assignment, notes, investigation, escalation, real evidence graph, XML/HTML/PDF reports, independent supervisor approval, model scoring, and private case ownership",
+    "Card issuance, masking, EMV/ARPC authorization, durable holds, reversal, presentment settlement, PIN decline, evidence, chargeback, dispute resolution, deposits, card lock, and balanced ledger",
+    "All four apps persist across reload, support mobile, contain no demo labels, and have no browser exceptions",
+    "Sessions, private records, financial balances, and case decisions survive an application service restart"
   ],
-  "protectedRoutes": "passed"
+  "passed": true
 }

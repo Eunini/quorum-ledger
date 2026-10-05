@@ -11,3 +11,6 @@
 .DS_Store
 /java-client/target/
 /payments-api/target/
+
+/ops/portfolio-demo/evidence/
+/ops/portfolio-demo/node_modules/

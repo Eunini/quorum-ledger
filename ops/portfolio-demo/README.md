@@ -1,27 +1,29 @@
-# Public fintech demos
+# Hosted financial applications
 
-This gateway runs the four portfolio backends behind one HTTPS host. The browser reads the real services; it never receives backend credentials. All accounts, cards, payments, and case evidence are synthetic.
+The gateway hosts four complete application workflows over the Java and Rust services. Create an account once to use all four. Accounts, memberships, sessions, saved records, and activity history persist in a private SQLite database. Financial and case state remains in the native backends. Each write checks workspace ownership and CSRF, and uses a workspace-scoped operation key.
 
-| Project | Public demo | Private listeners |
+| Application | Public URL | Private services |
 | --- | --- | --- |
-| Quorum Ledger | https://leads.realalma.com/fintech/quorum-ledger/ | replicas 28100–28102, Java API 28103 |
-| Cross-Border Clearing | https://leads.realalma.com/fintech/cross-border-clearing/ | Rust engine 28110, Java gateway 28111 |
-| Mule Ring Detector | https://leads.realalma.com/fintech/mule-ring-detector/ | Rust detector 28120, Java case service 28121 |
-| Card Authorization Switch | https://leads.realalma.com/fintech/card-auth-switch/ | Rust switch 28130, HSM simulator 28131, Java issuer 28132 |
+| Quorum Ledger | https://leads.realalma.com/fintech/quorum-ledger/ | replicas 28100–28102, Java payments 28103 |
+| Cross-Border Clearing | https://leads.realalma.com/fintech/cross-border-clearing/ | Rust netting 28110, Java clearing 28111 |
+| Mule Ring Detector | https://leads.realalma.com/fintech/mule-ring-detector/ | Rust scoring 28120, Java cases 28121 |
+| Card Authorization Switch | https://leads.realalma.com/fintech/card-auth-switch/ | Rust switch 28130, simulated HSM 28131, Java issuer 28132 |
 
-The Node gateway listens on loopback port 28190. Nginx terminates HTTPS. PostgreSQL 14 uses a separate cluster on loopback port 56486 and three separate databases. `fintech-demo-*` systemd services start at boot and restart after failure. Java heaps are capped at 512 MB. Each Java jar is copied to a file identified by its SHA-256 hash under the state directory before starting it, so rebuilding source jars cannot disrupt running services. Reinstalling restarts services whose release or unit changed.
+The UI lives in each repository's `web/` directory. `shared.js` and `shared.css` provide the common shell, session management, forms, and searchable, sortable, paginated tables. `applications.mjs` implements ownership-checked workflows. `store.mjs` persists workspace data and allocates operation identities before backend writes.
 
-## Behavior
+## Workflows
 
-Ledger runs use three fresh accounts to prove funding, an idempotent transfer, a hold, partial capture, and overdraft rejection. Card runs issue a fresh synthetic card, send ISO 8583 over TCP, verify the issuer response, replay an approved request, and reverse the hold. The four card scenarios cover approval, incorrect PIN, tampered ARQC, and insufficient funds.
+Ledger: currency accounts, funding, transfers, pending holds, partial capture, release, archive, and CSV export. The application calls the live three-node ledger through the Java payments API.
 
-Clearing is an operations dashboard with 40 fictional participants. An hourly feeder adds and settles 200 synthetic payments. The case desk is a public viewer of model-scored fixture evidence; graph, filtering, pagination, and audit browsing work without a sign-in. Case writes and report generation are not public.
+Clearing: schema-validated ISO 20022 payment instructions, private payment book, tracker history, FX quotes, participant positions, liquidity runs, cycle closure, settlement plans, and camt.053 statement downloads. Aggregate network settlement is shared. An hourly feeder keeps the fictional network supplied with traffic.
 
-The gateway exposes explicit route allowlists. Public run endpoints accept only fixed scenarios, allow one active run, wait 10 seconds between runs per visitor IP, and persist a 1,000-run daily quota. Nginx also limits request rate and body size. Other write routes and internal endpoints are rejected. This is a demonstration environment with public test HSM keys, not a payment processor.
+Investigations: Rust transaction scores, editable model-scored evidence, case assignment, comments, investigation and escalation, account graphs, XML/HTML/PDF reports, and independent STR filing approval. The gateway signs individual workspace identities for Java; it does not impersonate one shared analyst. Only another invited supervisor can approve a filing.
 
-## Installation on the demo VPS
+Cards: persistent issuance, masked card records, funding and status controls, chip/PIN/magstripe authorization, EMV response verification, held purchases, reversals, presentments, dispute evidence, chargeback clearing, acquirer representment, and state-valid resolutions. Card secrets and terminal requests stay in private files outside the repository.
 
-Check out all four repositories as siblings under `/home/kamicode/aps/fintech/`. Build their Rust release binaries and Spring Boot jars. Java 21, Node, PostgreSQL 14, Nginx, and passwordless service administration are required on this host. The model must exist at `mule-ring-detector/.demo/models/gbdt.json`; train it on the checked-in synthetic fixture using the preparation and training commands in that project's demo script.
+## Installation
+
+Check out the four repositories as siblings. Build the Rust release binaries and Java jars first. This host needs Java 21, Node 24 (built-in SQLite), PostgreSQL 14, Nginx, and passwordless service administration. Prepare the detector model using its synthetic dataset workflow. `seed-cases.py` also prepares the model-scored alert fixture imported into each workspace.
 
 ```sh
 python3 setup-runtime.py
@@ -29,19 +31,22 @@ python3 seed-cases.py
 python3 install-nginx.py
 ```
 
-`setup-runtime.py` keeps generated passwords in root-readable `/etc/fintech-demo/runtime.env`. Runtime state lives under `/var/lib/fintech-demo/`; no credentials, database files, or card snapshots belong in Git. Installation reuses the protected environment file and existing databases. Seed cases once; the initial clearing seed can be reproduced with the load generator pointed at `http://127.0.0.1:28111`.
+Runtime data lives under `/var/lib/fintech-demo/`. Generated credentials and the gateway signing key remain in root-readable `/etc/fintech-demo/runtime.env`. Installation preserves existing credentials, PostgreSQL databases, SQLite workspaces, and ledger state. Java jars are copied into immutable releases before services start, so rebuilding source jars cannot corrupt running services. Systemd's `fintech-demo-*` units supervise all thirteen services and the hourly network feed. These existing private unit and directory names are retained for migration compatibility.
 
-The Nginx installer adds a `/fintech/` location to the existing `leads.realalma.com` HTTPS server, saves the original configuration under `/etc/fintech-demo/`, validates configuration before reloading, and preserves the other application routes. The existing domain and certificate must already be configured.
+The Node gateway listens on loopback 28190. Nginx terminates HTTPS, caps bodies at 256 KiB, and rate limits requests. Backend APIs and arbitrary proxy routes are unavailable from the public host. Dedicated PostgreSQL databases use a separate localhost cluster on port 56486. Java heaps are capped at 512 MB.
+
+The Nginx installer scopes its changes to `/fintech/`, saves the original configuration, validates it, and reloads. The existing host and TLS certificate must already be configured.
 
 ## Verification
 
 ```sh
 npm ci
 npx playwright install chromium
+npm test
 npm run test:public
 ```
 
-The browser check exercises the live ledger run, all four card scenarios, clearing tables, and case graphs on desktop and mobile. It also verifies that shared writes, internal card endpoints, and oversized case pages are rejected. Set `DEMO_URL` to test another public base URL. Screenshots, video, and verification JSON go to ignored `evidence/`.
+`test-store.mjs` checks password hashing, guest upgrades, independent invitations, workspace isolation, operation retries, CSRF, and exact decimal amounts. `test-public.mjs` uses the public HTTPS URL to exercise actual browser forms and backend workflows across all four applications, including ledger reconciliation, payment settlement, independent filing approval, card settlement and disputes. It captures desktop/mobile screenshots and video, verifies reload persistence and browser errors, and writes `verification.json`. Generated evidence is ignored by Git. Set `FINTECH_PUBLIC_URL` for another deployment. On this administered VPS, `FINTECH_TEST_RESTART=1` also verifies that sessions and records survive a gateway service restart.
 
 ```sh
 sudo systemctl status 'fintech-demo-*'
@@ -49,4 +54,4 @@ sudo journalctl -u fintech-demo-web -n 30
 sudo nginx -t
 ```
 
-The gateway logs failures without recording request authorization headers. Keep the protected runtime environment out of logs and shell output. To remove public access, remove the fintech Nginx include, validate and reload Nginx, then stop the demo services and timer. Existing application services and databases are separate.
+The gateway logs only failure classes, never request credentials. Keep the runtime environment and private card files out of shell output, logs, and Git. Funds, cards, participants, and evidence are synthetic; the applications are not connected to financial networks.
