@@ -1,0 +1,6 @@
+{
+  "publicUrl": "https://leads.realalma.com/fintech/quorum-ledger/",
+  "verification": "docs/public-deployment-verification.json",
+  "gatewaySource": "https://github.com/Eunini/quorum-ledger/tree/main/ops/portfolio-demo",
+  "data": "synthetic"
+}
