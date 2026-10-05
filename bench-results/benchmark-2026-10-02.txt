@@ -1,0 +1,25 @@
+   Compiling consensus v0.1.0 (/home/kamicode/aps/fintech/quorum-ledger/crates/consensus)
+   Compiling server v0.1.0 (/home/kamicode/aps/fintech/quorum-ledger/crates/server)
+   Compiling bench v0.1.0 (/home/kamicode/aps/fintech/quorum-ledger/crates/bench)
+    Finished `release` profile [optimized + debuginfo] target(s) in 16.63s
+# 2026-10-02T18:56:02Z 8 vCPU, 5.15.0-191-generic, load: 22.41 12.16 5.92
+bench=fsync count=2000 p50_us=726.4 p99_us=3192.5 max_us=10108.1
+bench=sm batch=1 transfers=2000000 seconds=7.752 transfers_per_sec=257994 entry_p50_us=0.8 entry_p99_us=3.8
+bench=sm batch=128 transfers=2000000 seconds=2.962 transfers_per_sec=675205 entry_p50_us=58.3 entry_p99_us=2594.4
+bench=sm batch=8190 transfers=1998360 seconds=3.518 transfers_per_sec=568072 entry_p50_us=5038.6 entry_p99_us=134133.4
+# load: 22.35 12.81 6.27
+bench=cluster replicas=3 clients=1 batch=1 seconds=15.0 transfers=9503 failed=0 transfers_per_sec=634 requests_per_sec=634 request_p50_us=1059.6 request_p99_us=9759.8 request_p999_us=21607.3
+# load: 23.23 13.61 6.67
+bench=cluster replicas=3 clients=32 batch=1 seconds=15.0 transfers=104058 failed=0 transfers_per_sec=6936 requests_per_sec=6936 request_p50_us=3605.4 request_p99_us=19870.9 request_p999_us=41843.8
+# load: 22.49 14.09 6.98
+bench=cluster replicas=3 clients=8 batch=128 seconds=15.0 transfers=1464832 failed=0 transfers_per_sec=97653 requests_per_sec=763 request_p50_us=6911.0 request_p99_us=66688.3 request_p999_us=157569.9
+# load: 23.52 14.85 7.38
+bench=cluster replicas=3 clients=32 batch=128 seconds=15.0 transfers=1493888 failed=0 transfers_per_sec=99565 requests_per_sec=778 request_p50_us=27857.2 request_p99_us=311829.2 request_p999_us=420992.3
+# load: 26.35 16.05 7.93
+bench=cluster replicas=3 clients=16 batch=1000 seconds=15.0 transfers=1445000 failed=0 transfers_per_sec=96333 requests_per_sec=96 request_p50_us=99619.5 request_p99_us=1935831.6 request_p999_us=1947630.8
+# load: 26.72 17.06 8.49
+bench=postgres variant=single-c1 clients=1 transfers_per_txn=1 seconds=15 txns=8514 transfers_per_sec=567 txn_p50_us=1202 txn_p99_us=12045
+bench=postgres variant=single-c32 clients=32 transfers_per_txn=1 seconds=15 txns=29830 transfers_per_sec=1988 txn_p50_us=10447 txn_p99_us=82865
+bench=postgres variant=batch128-c8 clients=8 transfers_per_txn=128 seconds=15 txns=661 transfers_per_sec=5640 txn_p50_us=157840 txn_p99_us=500174
+bench=postgres variant=batch128-c32 clients=32 transfers_per_txn=128 seconds=15 txns=461 transfers_per_sec=3933 txn_p50_us=560883 txn_p99_us=5846460
+ consistency check: sum(debits)=sum(credits): true

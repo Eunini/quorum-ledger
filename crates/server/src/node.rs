@@ -23,6 +23,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use consensus::message::MAX_EVENTS_PER_REQUEST;
 use consensus::{Config, FileDevice, Frame, Message, Outgoing, Replica, Reply, Request, Wal};
 
 use crate::framing::{read_frame, write_frame};
@@ -284,6 +285,12 @@ fn connection_reader(
             let result = loop {
                 match read_frame(&mut reader) {
                     Ok(Frame::ClientRequest(req)) => {
+                        if req.operation.event_count() > MAX_EVENTS_PER_REQUEST {
+                            break Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "too many events in one request",
+                            ));
+                        }
                         if tx.send(Input::ClientRequest { conn, req }).is_err() {
                             break Ok(());
                         }

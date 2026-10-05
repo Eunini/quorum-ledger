@@ -1,0 +1,20 @@
+{
+  "verified_utc": "2026-10-05",
+  "rust_tests": 36,
+  "java_tests": 25,
+  "failures": 0,
+  "skipped": 0,
+  "rust_checks": [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo test --workspace"
+  ],
+  "java_checks": [
+    "./mvnw -B verify"
+  ],
+  "additional_checks": [
+    "oversized-request TCP regression",
+    "2,000 current simulator seeds, zero failures",
+    "25 Java tests including real three-node cluster"
+  ]
+}

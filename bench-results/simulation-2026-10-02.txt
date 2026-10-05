@@ -1,0 +1,24 @@
+== commit-old-term
+      1 state machine safety: replica 2 committe
+      1 state machine safety: replica 0 committe
+      1 panic: replica 0 asked to truncate commi
+VOPR done: 10000 seeds run, 9997 passed, 3 failed in 23.7s (422 seeds/s, 32.3 hours of simulated cluster time)
+== ack-before-sync
+    493 liveness: cluster did not converge withi
+     89 state machine safety: replica 0 committe
+     85 state machine safety: replica 1 committe
+     71 state machine safety: replica 2 committe
+VOPR done: 10000 seeds run, 9137 passed, 863 failed in 30.5s (327 seeds/s, 29.1 hours of simulated cluster time)
+== unbounded-follower-commit
+      1 state machine safety: replica 0 committe
+VOPR done: 10000 seeds run, 9999 passed, 1 failed in 25.4s (394 seeds/s, 32.3 hours of simulated cluster time)
+== vote-ignores-log
+   1095 panic: replica 2 asked to truncate commi
+   1048 panic: replica 1 asked to truncate commi
+   1041 panic: replica 0 asked to truncate commi
+    282 state machine safety: replica 1 committe
+VOPR done: 10000 seeds run, 5462 passed, 4538 failed in 14.0s (712 seeds/s, 15.6 hours of simulated cluster time)
+== clean 500k
+VOPR: start seed 1000000, 3 threads, 500000 seeds
+VOPR done: 500000 seeds run, 500000 passed, 0 failed in 999.1s (500 seeds/s, 1603.5 hours of simulated cluster time)
+faults injected across passing seeds: 3644197 crashes, 1020255 unsynced writes lost, 432855 torn writes, 185952 bit flips, 128901530 messages dropped, 25692367 duplicated, 4195702 network changes, 759105 clock jumps; 71397608 entries committed, 83277674 requests acked

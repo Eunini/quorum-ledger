@@ -2,7 +2,7 @@
 //! replication, idempotency, two-phase transfers, leader crash (SIGKILL),
 //! WAL recovery on restart.
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -227,4 +227,48 @@ fn replicated_ledger_survives_leader_crash_and_restart() {
         other_client.lookup_accounts(vec![1, 2, 3]).unwrap(),
         balances
     );
+}
+
+#[test]
+fn oversized_request_is_closed_without_stopping_the_replica() {
+    use consensus::message::MAX_EVENTS_PER_REQUEST;
+    use consensus::{Frame, Operation, Request};
+    use server::framing::{read_frame, write_frame};
+
+    let cluster = Cluster::start(1);
+    let mut client = Client::new(cluster.addrs.clone());
+    let account = NewAccount {
+        id: 1,
+        ledger: 1,
+        code: 1,
+        flags: 0,
+    };
+    // Also waits for the server to bind and elect a leader.
+    assert_eq!(
+        client.create_accounts(vec![account]).unwrap(),
+        vec![ResultCode::Ok]
+    );
+
+    let mut stream = TcpStream::connect(cluster.addrs[0]).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    write_frame(
+        &mut stream,
+        &Frame::ClientRequest(Request {
+            client_id: 999,
+            request_number: 1,
+            operation: Operation::LookupAccounts(vec![1; MAX_EVENTS_PER_REQUEST + 1]),
+        }),
+    )
+    .unwrap();
+    let err = read_frame(&mut stream).unwrap_err();
+    assert!(
+        matches!(
+            err.kind(),
+            std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
+        ),
+        "expected connection closure, got {err}"
+    );
+    assert_eq!(client.lookup_accounts(vec![1]).unwrap()[0].id, 1);
 }
